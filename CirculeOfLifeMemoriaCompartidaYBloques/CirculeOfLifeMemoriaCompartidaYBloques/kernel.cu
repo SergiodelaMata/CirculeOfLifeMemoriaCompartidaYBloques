@@ -24,7 +24,7 @@ __global__ void make_rand(int seed, char* m, int size) {
     myrandf = curand_uniform(&state);
     myrandf *= (size - 0 + 0.999999);
     num = myrandf;
-    if (m[num] == 'O')
+    if (m[num] == 'O') // Convierte una célula muerta a viva
     {
         m[num] = 'X';
     }
@@ -48,158 +48,150 @@ __global__ void matrix_operation(char* m, char* p, int width, int size, int numb
     int idy = blockIdx.y * blockDim.y + threadIdx.y; // Fila de un hilo entre todos los bloques
     int x = threadIdx.x; // Columna de un hilo en un bloque
     int y = threadIdx.y; // Fila de un hilo en un bloque
-    int index = idx + idy * number_columns;
-    int widthSharedMatrix = 18;
-    int indexBlock = (x + 1) + (y + 1) * widthSharedMatrix; // Id en la matriz de compartida
-    int counter = 0;
+    int index = idx + idy * number_columns; //Índice de la matriz según el id de la columna y el id de la fila de un hilo
+    int widthSharedMatrix = 18; // Ancho de la matriz en memoria compartida
+    int indexBlock = (x + 1) + (y + 1) * widthSharedMatrix; // Id en la matriz de compartida teniendo en cuenta que la matriz compartida va a tener dos elementos más por fila y por columna que la matriz original
+    int counter = 0; // Contador del número de posiciones con células vivas
     __shared__ int sharedMatrix[18 * 18];
-    if (idx < number_columns && idy < number_rows)
+    if (idx < number_columns && idy < number_rows) 
+        //Solo se realizará si el id del hilo se encuentra dentro de los limites de la matriz (en relación al número de elementos por columna y al número de de elementos por fila)  
     {
-        sharedMatrix[indexBlock] = m[index];
-        //printf("COCO %d %d\n", indexBlock, index);
-        //printf("COCO %c %c\n", sharedMatrix[indexBlock], m[index]);
-        //printf("%c\n", sharedMatrix[indexBlock]);
-        if ((x == 0) && (idx != 0)) // Elemento del lateral izquierdo del bloque tiene un elemento a su izquierda
+        sharedMatrix[indexBlock] = m[index]; //Se introduce el elemento del matriz completa marcado por el índice del hilo en la posición de la matriz en memoria compartida a partir del índice del hilo en el bloque en el que se encuentra
+        if (x == 0) // Considera los elementos del bloque que se encuentran en la primera columna del bloque
         {
-            sharedMatrix[indexBlock - 1] = m[index - 1];
+            if (idx != 0) // Considera aquellos elementos que no se encuentran en la primera columna de la matriz
+            {
+                sharedMatrix[indexBlock - 1] = m[index - 1]; //Se coloca el elemento que se encuentra a su lado izquierdo
+            }
+            else // Considera aquellos elementos que sí se encuentran en la primera columna de la matriz
+            {
+                sharedMatrix[indexBlock - 1] = 'O'; //Se coloca una célula muerta al lado izquierdo del elemento
+            }
         }
-        else
+        if (x == widthSharedMatrix - 1)// Considera los elementos del bloque que se encuentran en la última columna del bloque
         {
-            sharedMatrix[indexBlock - 1] = 'O';
+            if (idx != number_columns - 1)// Considera aquellos elementos que no se encuentran en la última columna de la matriz
+            {
+                sharedMatrix[indexBlock + 1] = m[index + 1]; //Se coloca el elemento que se encuentra a su lado derecha
+            }
+            else// Considera aquellos elementos que sí se encuentran en la última columna de la matriz
+            {
+                sharedMatrix[indexBlock + 1] = 'O'; //Se coloca una célula muerta al lado derecho del elemento
+            }
         }
-        if ((x == widthSharedMatrix - 1) && (idx != number_columns - 1))// Elemento del lateral izquierdo del bloque tiene un elemento a su derecha
+        if (y == 0) // Considera los elementos del bloque que se encuentran en la primera fila del bloque
         {
-            sharedMatrix[indexBlock + 1] = m[index + 1];
+            if (idy != 0) // Considera aquellos elementos que no se encuentran en la primera fila de la matriz
+            {
+                sharedMatrix[indexBlock - widthSharedMatrix] = m[index - number_columns]; //Se coloca un elemento que se encuentra encima del elemento estudiado actual
+            }
+            else // Considera aquellos elementos que sí se encuentran en la primera fila de la matriz
+            {
+                sharedMatrix[indexBlock - widthSharedMatrix] = 'O'; //Se coloca una célula muerta encima del elemento estudiado actual
+            }
         }
-        else
+        if (y == widthSharedMatrix - 1) // Considera los elementos del bloque que se encuentran en la última fila del bloque
         {
-            sharedMatrix[indexBlock + 1] = 'O';
-        }
-        if ((y == 0) && (idy != 0)) // Elemento del lateral superior del bloque tiene un elemento por encima
-        {
-            sharedMatrix[indexBlock - widthSharedMatrix] = m[index - number_columns];
-        }
-        else
-        {
-            sharedMatrix[indexBlock - widthSharedMatrix] = 'O';
-        }
-        if ((y == widthSharedMatrix - 1) && (idy != number_rows)) // Elemento del lateral inferior del bloque tiene un elemento por debajo
-        {
-            sharedMatrix[indexBlock + widthSharedMatrix] = m[index + number_columns];
-        }
-        else
-        {
-            sharedMatrix[indexBlock + widthSharedMatrix] = 'O';
+            if (idy != number_rows) // Considera aquellos elementos que no se encuentran en la última fila de la matriz
+            {
+                sharedMatrix[indexBlock + widthSharedMatrix] = m[index + number_columns]; //Se coloca un elemento que se encuentra debajo del elemento estudiado actual
+            }
+            else  // Considera aquellos elementos que sí se encuentran en la última fila de la matriz
+            {
+                sharedMatrix[indexBlock + widthSharedMatrix] = 'O'; //Se coloca una célula muerta debajo del elemento estudiado actual
+            }
         }
 
-        if (indexBlock == 19) // Elemento de la esquina superior izquierda del bloque
+        if (indexBlock == widthSharedMatrix + 1) // Consideración para el hilo que se encuentra en la primera fila y primera columna del bloque 
         {
-            if (index - number_columns - 1 >= 0)
+            if (index - number_columns - 1 >= 0) //Considera si el índice indicado se encuentra superiormente dentro de la matriz
             {
-                sharedMatrix[0] = m[index - number_columns - 1];
+                sharedMatrix[0] = m[index - number_columns - 1]; //Se coloca un elemento en la esquina superior izquierda con el respecto al índice del hilo actual estudiado
             }
-            else
+            else //Considera si el índice indicado no se encuentra superiormente dentro de la matriz
             {
-                sharedMatrix[0] = 'O';
+                sharedMatrix[0] = 'O'; //Se coloca una célula muerta en la esquina superior izquierda con el respecto al índice del hilo actual estudiado
             }
         }
-        else if (indexBlock == 34) // Elemento de la esquina superior derecha del bloque
+        else if (indexBlock == widthSharedMatrix * 2 - 2) // Consideración para el hilo que se encuentra en la primera fila y última columna del bloque 
         {
-            if (index - number_columns + 1 >= 0)
+            if (index - number_columns + 1 >= 0) //Considera si el índice indicado se encuentra superiormente dentro de la matriz
             {
-                sharedMatrix[17] = m[index - number_columns + 1];
+                sharedMatrix[widthSharedMatrix - 1] = m[index - number_columns + 1]; //Se coloca un elemento en la esquina superior derecha con el respecto al índice del hilo actual estudiado
             }
-            else
+            else //Considera si el índice indicado no se encuentra superiormente dentro de la matriz
             {
-                sharedMatrix[17] = 'O';
+                sharedMatrix[widthSharedMatrix - 1] = 'O'; //Se coloca una célula muerta en la esquina superior derecha con el respecto al índice del hilo actual estudiado
             }
         }
-        else if (indexBlock == 289) // Elemento de la esquina inferior izquierda del bloque
+        else if (indexBlock == widthSharedMatrix * (widthSharedMatrix - 2) + 1) // Consideración para el hilo que se encuentra en la última fila y primera columna del bloque 
         {
-            if (index + number_columns - 1 < number_columns * number_rows)
+            if (index + number_columns - 1 < number_columns * number_rows) //Considera si el índice indicado se encuentra inferiormente dentro de la matriz
             {
-                sharedMatrix[306] = m[index + number_columns - 1];
+                sharedMatrix[widthSharedMatrix * (widthSharedMatrix - 1)] = m[index + number_columns - 1]; //Se coloca un elemento en la esquina inferior izquierda con el respecto al índice del hilo actual estudiado
             }
-            else
+            else //Considera si el índice indicado no se encuentra inferiormente dentro de la matriz
             {
-                sharedMatrix[306] = 'O';
+                sharedMatrix[widthSharedMatrix * (widthSharedMatrix - 1)] = 'O'; //Se coloca una célula muerta en la esquina inferior izquierda con el respecto al índice del hilo actual estudiado
             }
         }
-        else if (indexBlock == 304) // Elemento de la esquina inferior izquierda del bloque
+        else if (indexBlock == widthSharedMatrix * (widthSharedMatrix - 1) - 2) // Consideración para el hilo que se encuentra en la última fila y última columna del bloque 
         {
-            if (index + number_columns + 1 < number_columns * number_rows)
+            if (index + number_columns + 1 < number_columns * number_rows) //Considera si el índice indicado se encuentra inferiormente dentro de la matriz
             {
-                sharedMatrix[323] = m[index + number_columns + 1];
+                sharedMatrix[widthSharedMatrix * widthSharedMatrix - 1] = m[index + number_columns + 1]; //Se coloca un elemento en la esquina inferior derecha con el respecto al índice del hilo actual estudiado
             }
-            else
+            else //Considera si el índice indicado no se encuentra inferiormente dentro de la matriz
             {
-                sharedMatrix[323] = 'O';
-            }
-        }
-    }
-    __syncthreads();
-    /*if (idx < number_columns && idy < number_rows)
-    {
-        if (indexBlock == 19)
-        {
-            printf("\n");
-            for (int i = 0; i < widthSharedMatrix*widthSharedMatrix; i++)//Representación matriz inicial
-            {
-                if (i % widthSharedMatrix == widthSharedMatrix- 1)
-                {
-                    printf("%c\n", sharedMatrix[i]);
-                }
-                else
-                {
-                    printf("%c ", sharedMatrix[i]);
-                }
+                sharedMatrix[widthSharedMatrix * widthSharedMatrix - 1] = 'O'; //Se coloca una célula muerta en la esquina inferior derecha con el respecto al índice del hilo actual estudiado
             }
         }
     }
-    __syncthreads();*/
+    __syncthreads(); // Se realiza la sincronización de los hilos del mismo bloque
+
     if (idx < number_columns && idy < number_rows)
     {
-        if (sharedMatrix[indexBlock - widthSharedMatrix - 1] == 'X') // Estudia si existe esquina superior izquierda y si tiene una célula viva
+        if (sharedMatrix[indexBlock - widthSharedMatrix - 1] == 'X') // Estudia si existe una célula viva en la esquina superior izquierda
         {
             counter++;
         }
-        if (sharedMatrix[indexBlock - 1] == 'X') //Estudia si existe el casilla en el lateral izquierdo y si tiene una célula viva
+        if (sharedMatrix[indexBlock - 1] == 'X') // Estudia si existe una célula viva en el lateral izquierdo
         {
             counter++;
         }
-        if (sharedMatrix[indexBlock - widthSharedMatrix] == 'X') //Estudia si existe el casilla en el lateral superior y si tiene una célula viva
+        if (sharedMatrix[indexBlock - widthSharedMatrix] == 'X') // Estudia si existe una célula viva en el lateral superior
         {
             counter++;
         }
-        if (sharedMatrix[indexBlock - widthSharedMatrix + 1] == 'X') // Estudia si existe esquina superior derecha y si tiene una célula viva
+        if (sharedMatrix[indexBlock - widthSharedMatrix + 1] == 'X') // Estudia si existe una célula viva en la esquina superior derecha
         {
             counter++;
         }
-        if (sharedMatrix[indexBlock + 1] == 'X') //Estudia si existe el casilla en el lateral derecho y si tiene una célula viva
+        if (sharedMatrix[indexBlock + 1] == 'X') // Estudia si existe una célula viva en el lateral derecho
         {
             counter++;
         }
-        if (sharedMatrix[indexBlock + widthSharedMatrix - 1] == 'X') // Estudia si existe esquina inferior izquierda y si tiene una célula viva
+        if (sharedMatrix[indexBlock + widthSharedMatrix - 1] == 'X') // Estudia si existe una célula viva en la esquina inferior izquierda
         {
             counter++;
         }
-        if (sharedMatrix[indexBlock + widthSharedMatrix] == 'X') //Estudia si existe el casilla en el lateral inferior y si tiene una célula viva
+        if (sharedMatrix[indexBlock + widthSharedMatrix] == 'X') // Estudia si existe una célula viva en el lateral inferior
         {
             counter++;
         }
-        if (sharedMatrix[indexBlock + widthSharedMatrix + 1] == 'X') // Estudia si existe esquina inferior derecha y si tiene una célula viva
+        if (sharedMatrix[indexBlock + widthSharedMatrix + 1] == 'X') // Estudia si existe una célula viva en la esquina inferior derecha
         {
             counter++;
         }
-        if ((counter == 3) && (sharedMatrix[indexBlock] == 'O')) // Una célula muerte se convierte en viva si tiene 3 células vivas alrededor de ella
+        if ((counter == 3) && (sharedMatrix[indexBlock] == 'O')) // Considera si una célula muerte se convierte en viva si tiene 3 células vivas alrededor de ella
         {
             p[index] = 'X';
         }
-        else if (((counter < 2) || (counter > 3)) && (sharedMatrix[indexBlock] == 'X')) // Una célula viva se convierte en muerte si alrededor de ella hay un número de células distinto de 2 o 3
+        else if (((counter < 2) || (counter > 3)) && (sharedMatrix[indexBlock] == 'X')) // Considera si una célula viva se convierte en muerte si alrededor de ella hay un número de células distinto de 2 o 3
         {
             p[index] = 'O';
         }
-        else //La célula mantiene su estado
+        else //Considera mantener el estado de la célula
         {
             p[index] = sharedMatrix[indexBlock];
         }
@@ -211,73 +203,76 @@ void generate_matrix(char* m, int size, dim3 nBlocks, dim3 nThreads, int number_
 int generate_random(int min, int max);
 void step_life(char* m, char* p, int width, int size, dim3 nBlocks, dim3 nThreads, int number_columns, int number_rows, int width_block);
 void show_info_gpu_card();
+int get_max_number_threads_block();
 int main(int argc, char* argv[])
 {
     show_info_gpu_card(); //Muestra las características de la tarjeta gráfica
+    int maxThreads = get_max_number_threads_block(); // Devuelve el número máximo de hilos que se pueden ejecutar por bloque
     printf("Comienza el juego de la vida:\n");
-    int number_blocks = 1;
-    //int number_threads = 1;
-    int number_rows = 32;
-    int number_columns = 32;
-    int width_block = 16;
-    char execution_mode = 'a';
+    int number_blocks_x = 1; //Número de bloques por columnas
+    int number_blocks_y = 1; //Número de bloques por filas
+    int number_rows = 32; // Número de elementos por fila
+    int number_columns = 32; // Número de elementos por columna
+    int width_block = 16; // Ancho de bloque
+    char execution_mode = 'a'; // Modo de ejecución del programa
     // Condiciones para los casos en los que se está pasando por terminal una serie de parámetros
-    if (argc == 2)
+    if (argc == 2) //Consideración si solo se pasan dos parámetros por consola
     {
         execution_mode = argv[1][0];
     }
-    else if (argc == 3)
+    else if (argc == 3) //Consideración si solo se pasan tres parámetros por consola
     {
         execution_mode = argv[1][0];
         number_rows = atoi(argv[2]);
     }
-    else if (argc >= 4)
+    else if (argc >= 4) //Consideración si solo se pasan cuatro o más parámetros por consola
     {
         execution_mode = argv[1][0];
         number_rows = atoi(argv[2]);
         number_columns = atoi(argv[3]);
     }
-    int size = number_rows * number_columns;
-    int width = number_columns;
-    dim3 threads(width_block, width_block);
-    if (size <= 32 * 32)
-        // Si el tamaño de la matriz es inferior o igual a 1024 
+    int size = number_rows * number_columns; //Tamaño de la matriz
+    int width = number_columns; //Ancho del bloque
+    dim3 threads(width_block, width_block); //Número de hilos generados por bloques teniendo en cuenta dos dimensiones
+    if (size <= maxThreads)
+        // Si el tamaño de la matriz es inferior o igual al máximo número de hilos por bloque que admite la GPU 
     {
-        //number_threads = width_block * width_block;
         if ((number_rows % width_block == 0) && (number_columns % width_block == 0))// Número de elementos múltiplos de 16 tanto en fila como en columna
         {
-            number_blocks = (number_rows / width_block) * (number_columns / width_block);
+            number_blocks_x = (number_columns / width_block);
+            number_blocks_y = (number_rows / width_block);
         }
         else if (number_rows % width_block == 0)// Número de elementos múltiplos de 16 en fila 
         {
-            number_blocks = (number_rows / width_block) * ((number_columns / width_block) + 1);
+            number_blocks_x = (number_columns / width_block) + 1;
+            number_blocks_y = (number_rows / width_block);
         }
         else if (number_columns % width_block == 0)// Número de elementos múltiplos de 16 en columna
         {
-            number_blocks = ((number_rows / width_block) + 1) * (number_columns / width_block);
+            number_blocks_x = (number_columns / width_block);
+            number_blocks_y = (number_rows / width_block) + 1;
         }
         else
         {
-            number_blocks = ((number_rows / width_block) + 1) * ((number_columns / width_block) + 1);
+            number_blocks_x = (number_columns / width_block) + 1;
+            number_blocks_y = (number_rows / width_block) + 1;
         }
-        dim3 nBlocks(1, number_blocks);
+        dim3 nBlocks(number_blocks_x, number_blocks_y); //Números de bloques elaborados en un grid de dos dimensiones
         operation(size, width, nBlocks, threads, number_columns, number_rows, execution_mode, width_block);
     }
-    else
+    else // Si el tamaño de la matriz es mayor al máximo número de hilos por bloque que admite la GPU 
     {
-        printf("No son válidas las dimensiones introducidas para la matriz.\n");
+        printf("No son validas las dimensiones introducidas para la matriz.\n");
     }
-
-
     getchar();
     getchar();
     return 0;
 }
 
 void operation(int size, int width, dim3 nBlocks, dim3 nThreads, int number_columns, int number_rows, char execution_mode, int width_block)
-//Realiza todas las operaciones del juego de la vida
+// Imprime las distintas matrices del juego de acuerdo al avance del mismo
 {
-    int counter = 1;
+    int counter = 1; //Contador de número de paso de matriz del juego
     char* a = (char*)malloc(size * sizeof(char));
     char* b = (char*)malloc(size * sizeof(char));
     generate_matrix(a, size, nBlocks, nThreads, number_columns, number_rows, width_block);
@@ -293,13 +288,14 @@ void operation(int size, int width, dim3 nBlocks, dim3 nThreads, int number_colu
             printf("%c ", a[i]);
         }
     }
-    while (true)
+    while (execution_mode == 'm' || execution_mode == 'a')
     {
+        //Va alternando las matrices para realizar las operaciones del juego considerando una como matriz inicial y otra como final
         if (counter % 2 == 1)
         {
-            step_life(a, b, width, size, nBlocks, nThreads, number_columns, number_rows, width_block);
+            step_life(a, b, width, size, nBlocks, nThreads, number_columns, number_rows, width_block);//Se realiza un paso del juego de la vida
             printf("Matriz paso %d:\n", counter);
-            for (int i = 0; i < size; i++)//Representación matriz inicial
+            for (int i = 0; i < size; i++)//Representación matriz en un paso en concreto
             {
                 if (i % width == width - 1)
                 {
@@ -313,9 +309,9 @@ void operation(int size, int width, dim3 nBlocks, dim3 nThreads, int number_colu
         }
         else
         {
-            step_life(b, a, width, size, nBlocks, nThreads, number_columns, number_rows, width_block);
+            step_life(b, a, width, size, nBlocks, nThreads, number_columns, number_rows, width_block);//Se realiza un paso del juego de la vida
             printf("Matriz paso %d:\n", counter);
-            for (int i = 0; i < size; i++)//Representación matriz inicial
+            for (int i = 0; i < size; i++)//Representación matriz en un paso en concreto
             {
                 if (i % width == width - 1)
                 {
@@ -333,7 +329,10 @@ void operation(int size, int width, dim3 nBlocks, dim3 nThreads, int number_colu
             getchar();
         }
     }
-
+    if (execution_mode != 'm' && execution_mode != 'a')
+    {
+        printf("El modo de ejecucion del programa es incorrecto.\n");
+    }
     free(a);
     free(b);
 }
@@ -345,7 +344,7 @@ void generate_matrix(char* m, int size, dim3 nBlocks, dim3 nThreads, int number_
     srand(time(NULL));
     int seed = rand() % 50000;
     char* m_d;
-    int numElem = generate_random(1, size * 0.25);// Genera un número aleatorio de máxima número de células vivas en la etapa inicial siendo el máximo un 15% del máximo número de casillas
+    int numElem = generate_random(1, size * 0.15);// Genera un número aleatorio de máxima número de células vivas en la etapa inicial siendo el máximo un 15% del máximo número de casillas
     cudaMalloc((void**)&m_d, size * sizeof(char));
     cudaMemcpy(m_d, m, size * sizeof(char), cudaMemcpyHostToDevice);
     prepare_matrix << <nBlocks, nThreads >> > (m_d, number_columns, number_rows, width_block); //Prepara la matriz con todas las casillas con células muertas
@@ -377,6 +376,18 @@ int generate_random(int min, int max) // Genera un número aleatorio entre un mín
     srand(time(NULL));
     int randNumber = rand() % (max - min) + min;
     return randNumber;
+}
+
+int get_max_number_threads_block()// Devuelve el número máximo de hilos que se pueden ejecutar por bloque
+{
+    cudaDeviceProp prop;
+
+    int count;
+    //Obtención número de dispositivos compatibles con CUDA
+    HANDLE_ERROR(cudaGetDeviceCount(&count));
+    HANDLE_ERROR(cudaGetDeviceProperties(&prop, 0));
+    return prop.maxThreadsPerBlock;
+
 }
 
 void show_info_gpu_card() // Muestra las características de la tarjeta gráfica usada
@@ -419,7 +430,6 @@ void show_info_gpu_card() // Muestra las características de la tarjeta gráfica u
         printf("Memoria global total: %zu GB.\n", prop.totalGlobalMem / (1024 * 1024 * 1024));
         printf("Memoria constante total: %zu Bytes.\n", prop.totalConstMem);
         printf("Memoria compartida por bloque: %zu Bytes.\n", prop.sharedMemPerBlock);
-        printf("Ancho del bus de memoria global: &d.\n", prop.memoryBusWidth);
         printf("Numero registros compartidos por bloque: %d.\n", prop.regsPerBlock);
         printf("Numero hilos maximos por bloque: %d.\n", prop.maxThreadsPerBlock);
         printf("Memoria compartida por multiprocesador: %zu Bytes.\n", prop.sharedMemPerMultiprocessor);
